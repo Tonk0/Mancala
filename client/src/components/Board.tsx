@@ -1,15 +1,16 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import io from 'socket.io-client';
 import Store from './Store';
 import Pit from './Pit';
 
+const socket = io('http://localhost:3000');
 interface GameState {
   pits: number[]
-  currentPlayer: number
+  currentPlayer: string
 }
-
 const initialState : GameState = {
   pits: Array(14).fill(4).map((_, index) => (index === 12 || index === 13 ? 0 : 4)),
-  currentPlayer: 0,
+  currentPlayer: '',
 };
 const getNextPit = (currentPit: number) => {
   if (currentPit === 0) return 12;
@@ -58,16 +59,18 @@ const endGame = (pits: Array<number>) : number => {
 
 function Board() {
   const [state, setState] = useState(initialState);
+  const [myID, setMyID] = useState('');
   const handlePitClick = (index: number) => {
     // eslint-disable-next-line prefer-const
     let { pits, currentPlayer } = state;
-    if ((currentPlayer === 0 && index > 5) || (currentPlayer === 1 && index < 6)) return;
+    if (myID !== state.currentPlayer) return;
+    if (index <= 5 || index >= 11) return;
     let stones = pits[index];
     if (stones === 0) return;
     pits[index] = 0;
     while (stones > 0) {
       index = getNextPit(index);
-      if ((currentPlayer === 0 && index === 13) || (currentPlayer === 1 && index === 12)) {
+      if (index === 12) {
         // eslint-disable-next-line no-continue
         continue;
       }
@@ -76,18 +79,18 @@ function Board() {
     }
     // stone capture
     const isLastStone = pits[index] === 1 && index !== 12 && index !== 13;
-    const isPlayerSide = (currentPlayer === 0 && index <= 5) || (currentPlayer === 1 && index >= 6);
+    const isPlayerSide = index >= 6;
     if (isLastStone && isPlayerSide) {
-      const oppositeIndex = currentPlayer === 0 ? index + 6 : index - 6;
+      const oppositeIndex = index - 6;
       if (pits[oppositeIndex] !== 0) {
-        const playerStore = currentPlayer === 0 ? 12 : 13;
+        const playerStore = 13;
         pits[playerStore] += pits[index] + pits[oppositeIndex];
         pits[index] = 0;
         pits[oppositeIndex] = 0;
       }
     }
-    if (!((currentPlayer === 0 && index === 12) || (currentPlayer === 1 && index === 13))) {
-      currentPlayer = 1 - currentPlayer;
+    if (!(index === 13)) {
+      currentPlayer = '';
     }
     switch (endGame(pits)) { // endGame() can change pits
       case 0:
@@ -103,8 +106,24 @@ function Board() {
       default:
         // do nothing
     }
+    socket.emit('make-move', { pits, isSwitch: myID !== currentPlayer });
     setState({ pits, currentPlayer });
   };
+  useEffect(() => {
+    socket.on('connect', () => {
+      if (socket.id) {
+        setMyID(socket.id);
+      }
+    });
+    socket.on('game-start', (currentPlayer) => {
+      console.log('gameStarted: ', currentPlayer);
+      setState((prev) => ({ ...prev, currentPlayer }));
+    });
+    socket.on('move-made', ({pits, currentPlayer}) => {
+      console.log(pits, currentPlayer)
+      setState({ pits, currentPlayer });
+    });
+  }, []);
   return (
     <div className="board">
       <Store stones={state.pits[12]} />
