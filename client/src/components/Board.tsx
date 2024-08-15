@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
-import io from 'socket.io-client';
+import { Socket } from 'socket.io-client';
 import Store from './Store';
 import Pit from './Pit';
 
-const socket = io('http://localhost:3000');
 interface GameState {
   pits: number[]
   currentPlayer: string
@@ -56,8 +55,10 @@ const endGame = (pits: Array<number>) : number => {
   }
   return -1;
 };
-
-function Board() {
+interface IBoardProps {
+  socket: Socket
+}
+function Board({ socket }:IBoardProps) {
   const [state, setState] = useState(initialState);
   const [myID, setMyID] = useState('');
   const handlePitClick = (index: number) => {
@@ -119,8 +120,8 @@ function Board() {
       console.log('gameStarted: ', currentPlayer);
       setState((prev) => ({ ...prev, currentPlayer }));
     });
-    socket.on('move-made', ({pits, currentPlayer}) => {
-      console.log(pits, currentPlayer)
+    socket.on('move-made', ({ pits, currentPlayer }) => {
+      console.log(pits, currentPlayer);
       setState({ pits, currentPlayer });
     });
   }, []);
