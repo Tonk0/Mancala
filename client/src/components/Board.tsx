@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { Socket } from 'socket.io-client';
 import Store from './Store';
 import Pit from './Pit';
+import { Room } from '../types';
+import EndGameModal from './EndGameModal';
 
 interface GameState {
   pits: number[]
@@ -43,15 +45,15 @@ const endGame = (pits: Array<number>) : number => {
   if (checkForEmptyRow(pits, 0, 5)) {
     collectStones(6, 11, 13);
     if (pits[12] === pits[13]) return 2;
-    return pits[12] < pits[13] ? 1 : 0;
+    return pits[13] > pits[12] ? 0 : 1;
   }
   if (checkForEmptyRow(pits, 6, 11)) {
     collectStones(0, 5, 12);
     if (pits[12] === pits[13]) return 2;
-    return pits[12] < pits[13] ? 1 : 0;
+    return pits[13] > pits[12] ? 0 : 1;
   }
   if (checkByAmount(pits)) {
-    return pits[12] < pits[13] ? 13 : 12;
+    return pits[12] < pits[13] ? 0 : 1;
   }
   return -1;
 };
@@ -61,11 +63,15 @@ interface IBoardProps {
 function Board({ socket }:IBoardProps) {
   const [state, setState] = useState(initialState);
   const [myID, setMyID] = useState('');
+  const [isWaiting, setIsWaiting] = useState(true);
+  const [room, setRoom] = useState<Room | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
   const handlePitClick = (index: number) => {
+    console.log(index);
     // eslint-disable-next-line prefer-const
     let { pits, currentPlayer } = state;
     if (myID !== state.currentPlayer) return;
-    if (index <= 5 || index >= 11) return;
+    if (index <= 5 || index > 11) return;
     let stones = pits[index];
     if (stones === 0) return;
     pits[index] = 0;
@@ -95,47 +101,59 @@ function Board({ socket }:IBoardProps) {
     }
     switch (endGame(pits)) { // endGame() can change pits
       case 0:
-        // show modal first player win
-        break;
       case 1:
-        // show modal second player win
-        break;
       case 2:
-        // show modal tie
+        // show modal which will show winner or show tie
+        console.log('Current: ', pits[13], ' Opposite: ', pits[12]);
+        setIsOpen(true);
         break;
       case -1:
       default:
         // do nothing
     }
-    socket.emit('make-move', { pits, isSwitch: myID !== currentPlayer });
+    socket.emit('make-move', { pits, isSwitch: myID !== currentPlayer, room });
     setState({ pits, currentPlayer });
   };
   useEffect(() => {
-    socket.on('connect', () => {
-      if (socket.id) {
-        setMyID(socket.id);
-      }
+    if (socket.id) {
+      setMyID(socket.id);
+    }
+    // socket.on('connect', () => {
+    //   if (socket.id) {
+    //     setMyID(socket.id);
+    //   }
+    // });
+    // socket.on('game-start', (currentPlayer) => {
+    //   console.log('gameStarted: ', currentPlayer);
+    //   setState((prev) => ({ ...prev, currentPlayer }));
+    // });
+    socket.on('gameStarted', (roomFromServer: Room) => {
+      setIsWaiting(false);
+      setRoom(roomFromServer);
+      setState((prev) => ({ ...prev, currentPlayer: roomFromServer.currentPlayerId }));
     });
-    socket.on('game-start', (currentPlayer) => {
-      console.log('gameStarted: ', currentPlayer);
-      setState((prev) => ({ ...prev, currentPlayer }));
+    socket.on('move-made', (pits, roomFromServer: Room) => {
+      // console.log(pits, roomFromServer);
+      setState({ pits, currentPlayer: roomFromServer.currentPlayerId });
+      setRoom(roomFromServer);
     });
-    socket.on('move-made', ({ pits, currentPlayer }) => {
-      console.log(pits, currentPlayer);
-      setState({ pits, currentPlayer });
-    });
-  }, []);
+  }, [socket]);
   return (
-    <div className="board">
-      <Store stones={state.pits[12]} />
-      <div className="pits">
-        {state.pits.slice(0, 12).map((stones, index) => (
+    <div className="board-wrapper">
+      {isWaiting && <h2>Waiting for player</h2>}
+      <div className="board">
+        <Store stones={state.pits[12]} />
+        <div className="pits">
+          {state.pits.slice(0, 12).map((stones, index) => (
           // eslint-disable-next-line react/no-array-index-key
-          <Pit key={index} index={index} stones={stones} handlePitClick={handlePitClick} />
-        ))}
+            <Pit key={index} index={index} stones={stones} handlePitClick={handlePitClick} />
+          ))}
+        </div>
+        <Store stones={state.pits[13]} />
       </div>
-      <Store stones={state.pits[13]} />
+      {isOpen && <EndGameModal setIsOpen={setIsOpen} currentPlayerStones={state.pits[13]} oppositePlayerStones={state.pits[12]} />}
     </div>
+
   );
 }
 
