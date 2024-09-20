@@ -11,7 +11,7 @@ const io = new Server(httpServer, {
     origin: "*"
   }
 });
-const rooms = [];
+let rooms = [];
 
 io.on('connection', (socket) => {
   socket.on('getAvailableRooms', ()=>{
@@ -31,8 +31,7 @@ io.on('connection', (socket) => {
     joinRoomAndEmit(socket, roomId);
     //socket.join(roomId);
     socket.emit('room-created', room);
-    const availableRooms = rooms.filter(room => room.users.length < 2);
-    io.emit('availableRooms', availableRooms);
+    io.emit('availableRooms', rooms);
   })
   socket.on('join-room', (roomId) => {
     const room = rooms.find((el)=>el.id === roomId);
@@ -44,23 +43,29 @@ io.on('connection', (socket) => {
     const availableRooms = rooms.filter(room => room.users.length < 2);
     io.emit('availableRooms', availableRooms);
   })
-  // players.push(socket.id);
-  // if (players.length === 2) {
-  //   io.emit('game-start', players[currentPlayer]);
-  // }
   console.log(socket.id)
   socket.on('make-move', ({pits, isSwitch, room}) => {
-    //console.log(currentPlayer, players[currentPlayer]);
     if (isSwitch) {
-      console.log('in isSwitch')
       room.currentPlayerIndex = 1 - room.currentPlayerIndex;
       room.currentPlayerId = room.users[room.currentPlayerIndex];
     }
-    //console.log(currentPlayer, players[currentPlayer]);
     const oppSide = pits.slice(0,6).reverse();
     const playerSide = pits.slice(6, 12).reverse();
     pits = [...playerSide, ...oppSide, pits[13], pits[12]];
-    socket.broadcast.emit('move-made', pits, room);
+    socket.emitToRoom('move-made', pits, room);
+  })
+  socket.on('endGame', () => {
+    socket.emitToRoom('game-ended');
+  })
+  // use without strict mode
+  socket.on('deleteRoom', (roomID) => {
+    console.log(socket.id, 'left the room');
+    socket.to(roomID).emit('playerLeft');
+    // socket.emitToRoom('playerLeft'); this will not work if player refresh page. So i just use default to()
+    socket.leave(roomID);
+    rooms = rooms.filter(room => room.id !== roomID);
+    // here all rooms are available because deleting does not affect the number of users
+    io.emit('availableRooms', rooms)
   })
 })
 httpServer.listen(3000, () => {
@@ -70,8 +75,8 @@ httpServer.listen(3000, () => {
 function joinRoomAndEmit(socket, roomId){
   socket.join(roomId);
 
-  socket.emitToRoom = (eventName, data) => {
-    socket.to(roomId).emit(eventName, data);
+  socket.emitToRoom = (eventName, ...data) => {
+    socket.to(roomId).emit(eventName, ...data);
   }
 }
 

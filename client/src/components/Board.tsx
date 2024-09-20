@@ -1,18 +1,16 @@
 import { useState, useEffect } from 'react';
 import { Socket } from 'socket.io-client';
+import { useNavigate, useParams } from 'react-router-dom';
 import Store from './Store';
 import Pit from './Pit';
 import { Room } from '../types';
 import EndGameModal from './EndGameModal';
+import PlayerLeftModal from './PlayerLeftModal';
 
 interface GameState {
   pits: number[]
   currentPlayer: string
 }
-const initialState : GameState = {
-  pits: Array(14).fill(4).map((_, index) => (index === 12 || index === 13 ? 0 : 4)),
-  currentPlayer: '',
-};
 const getNextPit = (currentPit: number) => {
   if (currentPit === 0) return 12;
   if (currentPit === 11) return 13;
@@ -61,13 +59,18 @@ interface IBoardProps {
   socket: Socket
 }
 function Board({ socket }:IBoardProps) {
-  const [state, setState] = useState(initialState);
+  const [state, setState] = useState<GameState>({
+    pits: Array(14).fill(4).map((_, index) => (index === 12 || index === 13 ? 0 : 4)),
+    currentPlayer: '-1',
+  });
   const [myID, setMyID] = useState('');
   const [isWaiting, setIsWaiting] = useState(true);
+  const [isLeft, setIsLeft] = useState(false);
   const [room, setRoom] = useState<Room | null>(null);
+  const { roomID } = useParams();
+  const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const handlePitClick = (index: number) => {
-    console.log(index);
     // eslint-disable-next-line prefer-const
     let { pits, currentPlayer } = state;
     if (myID !== state.currentPlayer) return;
@@ -103,8 +106,8 @@ function Board({ socket }:IBoardProps) {
       case 0:
       case 1:
       case 2:
+        socket.emit('endGame');
         // show modal which will show winner or show tie
-        console.log('Current: ', pits[13], ' Opposite: ', pits[12]);
         setIsOpen(true);
         break;
       case -1:
@@ -117,30 +120,48 @@ function Board({ socket }:IBoardProps) {
   useEffect(() => {
     if (socket.id) {
       setMyID(socket.id);
+    } else {
+      navigate('/');
     }
-    // socket.on('connect', () => {
-    //   if (socket.id) {
-    //     setMyID(socket.id);
-    //   }
-    // });
-    // socket.on('game-start', (currentPlayer) => {
-    //   console.log('gameStarted: ', currentPlayer);
-    //   setState((prev) => ({ ...prev, currentPlayer }));
-    // });
     socket.on('gameStarted', (roomFromServer: Room) => {
       setIsWaiting(false);
       setRoom(roomFromServer);
       setState((prev) => ({ ...prev, currentPlayer: roomFromServer.currentPlayerId }));
     });
     socket.on('move-made', (pits, roomFromServer: Room) => {
-      // console.log(pits, roomFromServer);
       setState({ pits, currentPlayer: roomFromServer.currentPlayerId });
       setRoom(roomFromServer);
     });
-  }, [socket]);
+    socket.on('game-ended', () => {
+      setIsOpen(true);
+    });
+    socket.on('playerLeft', () => {
+      setIsLeft(true);
+    });
+    const handleUnload = () => {
+      socket.emit('deleteRoom', roomID);
+    };
+    window.addEventListener('beforeunload', handleUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleUnload);
+      socket.off('gameStarted');
+      socket.off('move-made');
+      socket.emit('deleteRoom', roomID);
+    };
+  }, [socket, roomID, navigate]);
+  const renderTurn = () => {
+    if (!isWaiting) {
+      if (myID === state.currentPlayer) {
+        return <h2>Ваш ход</h2>;
+      }
+      return <h2>Ход оппонента</h2>;
+    }
+    return null;
+  };
   return (
     <div className="board-wrapper">
       {isWaiting && <h2>Waiting for player</h2>}
+      {renderTurn()}
       <div className="board">
         <Store stones={state.pits[12]} />
         <div className="pits">
@@ -151,7 +172,8 @@ function Board({ socket }:IBoardProps) {
         </div>
         <Store stones={state.pits[13]} />
       </div>
-      {isOpen && <EndGameModal setIsOpen={setIsOpen} currentPlayerStones={state.pits[13]} oppositePlayerStones={state.pits[12]} />}
+      {isOpen && <EndGameModal currentPlayerStones={state.pits[13]} oppositePlayerStones={state.pits[12]} />}
+      {isLeft && <PlayerLeftModal />}
     </div>
 
   );

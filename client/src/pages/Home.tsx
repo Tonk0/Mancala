@@ -13,6 +13,11 @@ function Home({ socket }: IHomeProps) {
   const [rooms, setRooms] = useState<Room[]>([]);
   const navigate = useNavigate();
   useEffect(() => {
+    // when user return to home page
+    if (socket.id) {
+      setIsLoading(false);
+      socket.emit('getAvailableRooms');
+    }
     socket.on('connect', () => {
       setIsLoading(false);
       socket.emit('getAvailableRooms');
@@ -20,6 +25,10 @@ function Home({ socket }: IHomeProps) {
     socket.on('availableRooms', (availableRooms: Room[]) => {
       setRooms(availableRooms);
     });
+    return () => {
+      socket.off('connect');
+      socket.off('availableRooms');
+    };
   }, [socket]);
   const joinRoom = (room: Room) => {
     socket.emit('join-room', room.id);
