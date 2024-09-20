@@ -160,7 +160,7 @@ function Board({ socket }:IBoardProps) {
   };
   return (
     <div className="board-wrapper">
-      {isWaiting && <h2>Waiting for player</h2>}
+      {isWaiting && <h2>Ждеп оппонента</h2>}
       {renderTurn()}
       <div className="board">
         <Store stones={state.pits[12]} />
